@@ -60,7 +60,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   allowCreditSales: true,
   requireRxUpload: false,
   autoLogoutMinutes: 30,
-  themeColor: "blue",
+  themeColor: "indigo",
   branches: ["Main Branch"],
   currentBranch: "Main Branch",
 };

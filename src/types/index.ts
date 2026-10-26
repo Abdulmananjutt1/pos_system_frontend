@@ -305,7 +305,7 @@ export interface Expense {
 }
 
 // ─── Theme ────────────────────────────────────────────────────────────────────
-export type ThemeColor = "blue" | "purple" | "green" | "rose" | "orange" | "teal" | "black";
+export type ThemeColor = "blue" | "purple" | "green" | "rose" | "orange" | "teal" | "black" | "white" | "indigo" | "cyan";
 
 // ─── App Settings ─────────────────────────────────────────────────────────────
 export interface AppSettings {

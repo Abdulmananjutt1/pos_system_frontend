@@ -8,13 +8,17 @@ import { ThemeColor } from "@/types";
 export const THEMES: {
   key: ThemeColor;
   label: string;
-  swatch: string;   // hex — matches --sidebar-active-bg in globals.css
+  swatch: string;       // accent hex shown in the colour picker dot
+  previewBg?: string;   // sidebar preview bg hex (optional, for white theme)
 }[] = [
-  { key: "blue",   label: "Ocean Blue",    swatch: "#2563eb" },
-  { key: "purple", label: "Royal Purple",  swatch: "#9333ea" },
-  { key: "green",  label: "Forest Green",  swatch: "#16a34a" },
-  { key: "rose",   label: "Cherry Rose",   swatch: "#e11d48" },
-  { key: "orange", label: "Sunset Orange", swatch: "#ea580c" },
-  { key: "teal",   label: "Deep Teal",     swatch: "#0d9488" },
-  { key: "black",  label: "Midnight",      swatch: "#111827" },
+  { key: "blue",   label: "Vivid Blue",      swatch: "#2563eb" },
+  { key: "indigo", label: "Deep Indigo",     swatch: "#4f46e5" },
+  { key: "purple", label: "Rich Purple",     swatch: "#7c3aed" },
+  { key: "green",  label: "Emerald Green",   swatch: "#059669" },
+  { key: "teal",   label: "Cyan Teal",       swatch: "#0891b2" },
+  { key: "cyan",   label: "Sky Blue",        swatch: "#0ea5e9" },
+  { key: "orange", label: "Amber Orange",    swatch: "#d97706" },
+  { key: "rose",   label: "Crimson Rose",    swatch: "#e11d48" },
+  { key: "black",  label: "Jet Black",       swatch: "#09090b" },
+  { key: "white",  label: "Snow White",      swatch: "#f1f5f9", previewBg: "#ffffff" },
 ];

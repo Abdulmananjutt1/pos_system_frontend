@@ -464,43 +464,50 @@ export default function SettingsPage() {
               />
 
               <div className="space-y-6">
-                {/* Theme grid */}
-                <div className="grid grid-cols-3 gap-3">
-                  {THEMES.map(({ key, label, swatch }) => {
-                    const isActive = settings.themeColor === key;
+                {/* Theme grid — 5 columns */}
+                <div className="grid grid-cols-5 gap-3">
+                  {THEMES.map(({ key, label, swatch, previewBg }) => {
+                    const isActive  = settings.themeColor === key;
+                    const bg        = previewBg ?? swatch;
+                    const isLight   = (() => {
+                      const r = parseInt(bg.slice(1,3),16);
+                      const g = parseInt(bg.slice(3,5),16);
+                      const b = parseInt(bg.slice(5,7),16);
+                      return (r*299+g*587+b*114)/1000 > 180;
+                    })();
                     return (
                       <button
                         key={key}
-                        onClick={() => {
-                          updateSettings({ themeColor: key });
-                          toast.success(`Theme changed to ${label}`);
-                        }}
-                        className={`group relative flex flex-col items-center gap-2.5 p-4 rounded-2xl border-2 transition-all ${
+                        onClick={() => { updateSettings({ themeColor: key }); toast.success(`Theme: ${label}`); }}
+                        className={`group relative flex flex-col items-center gap-2 p-3 rounded-2xl border-2 transition-all ${
                           isActive
-                            ? "border-gray-400 bg-gray-50 shadow-sm"
-                            : "border-gray-100 hover:border-gray-200 hover:bg-gray-50"
+                            ? "border-blue-400 shadow-md scale-105"
+                            : "border-gray-100 hover:border-gray-300 hover:scale-102"
                         }`}
                         aria-label={`Select ${label} theme`}
                         aria-pressed={isActive}
                       >
-                        {/* Colour swatch */}
+                        {/* Swatch circle */}
                         <div
-                          className="w-12 h-12 rounded-xl shadow-md flex items-center justify-center"
-                          style={{ backgroundColor: swatch }}
+                          className={`w-11 h-11 rounded-xl shadow flex items-center justify-center transition-transform ${isLight ? "border border-gray-200" : ""}`}
+                          style={{ background: bg }}
                         >
                           {isActive && (
-                            <Check size={20} className="text-white drop-shadow" strokeWidth={3} />
+                            <Check
+                              size={18}
+                              strokeWidth={3}
+                              className={isLight ? "text-gray-800 drop-shadow" : "text-white drop-shadow"}
+                            />
                           )}
                         </div>
-                        <span className={`text-xs font-medium ${isActive ? "text-gray-900" : "text-gray-500"}`}>
-                          {label}
+                        <span className={`text-[10px] font-semibold leading-tight text-center truncate w-full ${isActive ? "text-gray-900" : "text-gray-500"}`}>
+                          {label.split(" ").pop()}
                         </span>
 
-                        {/* Active ring accent */}
                         {isActive && (
                           <span
                             className="absolute inset-0 rounded-2xl pointer-events-none"
-                            style={{ boxShadow: `0 0 0 2px white, 0 0 0 4px ${swatch}` }}
+                            style={{ boxShadow: `0 0 0 2px white, 0 0 0 3.5px ${swatch}` }}
                           />
                         )}
                       </button>
@@ -510,33 +517,35 @@ export default function SettingsPage() {
 
                 {/* Live preview strip */}
                 <div className="rounded-xl border border-gray-100 overflow-hidden">
-                  <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
-                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Preview</p>
+                  <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+                    <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">Live Preview</p>
+                    <span className="text-xs font-semibold text-gray-600">
+                      {THEMES.find(t => t.key === settings.themeColor)?.label}
+                    </span>
                   </div>
                   <div className="p-4 flex flex-wrap items-center gap-3">
-                    {/* Simulated sidebar active link */}
-                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg theme-sidebar-active text-sm font-medium w-fit">
-                      <div className="w-4 h-4 bg-white/30 rounded" />
-                      Active Nav Item
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg theme-sidebar-active text-sm font-semibold w-fit">
+                      <div className="w-3.5 h-3.5 bg-white/30 rounded" />
+                      Active Nav
                     </div>
-                    {/* Simulated primary button */}
-                    <div className="px-4 py-2 rounded-lg theme-btn-primary text-sm font-medium text-white w-fit cursor-default">
-                      Primary Button
+                    <div className="px-4 py-2 rounded-lg theme-btn-primary text-sm font-semibold w-fit cursor-default">
+                      Button
                     </div>
-                    {/* Simulated badge */}
-                    <div className="px-2.5 py-0.5 rounded-full theme-badge text-xs font-semibold w-fit">
+                    <div className="px-2.5 py-1 rounded-full theme-badge text-xs font-bold w-fit">
                       Badge
                     </div>
-                    {/* Simulated logo icon */}
-                    <div className="w-8 h-8 theme-logo-icon rounded-lg flex items-center justify-center">
+                    <div className="w-8 h-8 theme-logo-icon rounded-lg flex items-center justify-center shadow-sm">
                       <span className="text-white text-xs font-bold">Rx</span>
+                    </div>
+                    <div className="px-3 py-1.5 rounded-xl text-xs font-medium theme-tab-active w-fit">
+                      Tab Active
                     </div>
                   </div>
                 </div>
 
-                <p className="text-xs text-gray-400">
-                  Theme applies instantly across the sidebar, buttons, and interactive elements.
-                </p>
+                <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-xs text-amber-700">
+                  💡 <strong>Snow White</strong> gives a bright white sidebar. <strong>Jet Black</strong> switches the entire app to dark mode.
+                </div>
               </div>
             </Card>
           )}
