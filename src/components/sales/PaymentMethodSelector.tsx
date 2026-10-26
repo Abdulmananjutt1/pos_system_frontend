@@ -1,6 +1,6 @@
 "use client";
 
-import { CreditCard, Smartphone, Banknote, Building2 } from "lucide-react";
+import { CreditCard, Smartphone, Banknote, Building2, Wallet } from "lucide-react";
 import { PaymentMethod } from "@/types";
 import { PAYMENT_METHODS } from "@/lib/constants";
 import { cn } from "@/lib/utils";
@@ -11,6 +11,7 @@ const methodIcons: Record<PaymentMethod, React.ReactNode> = {
   UBL: <Building2 size={14} />,
   JazzCash: <Smartphone size={14} />,
   EasyPaisa: <Smartphone size={14} />,
+  Credit: <Wallet size={14} />,
 };
 
 interface PaymentMethodSelectorProps {

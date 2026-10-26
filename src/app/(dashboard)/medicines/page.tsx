@@ -2,13 +2,8 @@
 
 import { useState, useEffect } from "react";
 import {
-  Plus,
-  Search,
-  Pencil,
-  Trash2,
-  PackagePlus,
-  Pill,
-  ArrowUpDown,
+  Plus, Search, Pencil, Trash2, PackagePlus, Pill, ArrowUpDown,
+  Upload, Barcode, TrendingDown, Download, RefreshCw,
 } from "lucide-react";
 import Header from "@/components/layout/Header";
 import Button from "@/components/ui/Button";
@@ -18,9 +13,12 @@ import ExpiryBadge from "@/components/inventory/ExpiryBadge";
 import StockBar from "@/components/inventory/StockBar";
 import MedicineFormModal from "@/components/inventory/MedicineFormModal";
 import StockAdjustModal from "@/components/inventory/StockAdjustModal";
+import BarcodeLabelModal from "@/components/inventory/BarcodeLabelModal";
+import BulkImportModal from "@/components/inventory/BulkImportModal";
 import { usePharmacyStore } from "@/store";
 import { formatCurrency } from "@/lib/utils";
 import { useInventoryAlerts } from "@/hooks/useInventoryAlerts";
+import { useReorderSuggestions } from "@/hooks/useReorderSuggestions";
 import { Medicine } from "@/types";
 import toast from "react-hot-toast";
 import { MEDICINE_CATEGORIES } from "@/lib/constants";
@@ -28,11 +26,13 @@ import { MEDICINE_CATEGORIES } from "@/lib/constants";
 type CategoryFilter = Medicine["category"] | "All";
 type SortKey = "name" | "stock" | "price" | "expiry";
 type SortDir = "asc" | "desc";
+type ActiveTab = "catalogue" | "reorder";
 
 export default function MedicinesPage() {
   const {
     medicines,
     suppliers,
+    sales,
     addMedicine,
     updateMedicine,
     deleteMedicine,
@@ -43,16 +43,20 @@ export default function MedicinesPage() {
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("All");
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [activeTab, setActiveTab] = useState<ActiveTab>("catalogue");
 
   const [formOpen, setFormOpen] = useState(false);
   const [editingMed, setEditingMed] = useState<Medicine | null>(null);
   const [adjustingMed, setAdjustingMed] = useState<Medicine | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<Medicine | null>(null);
+  const [showBarcodeModal, setShowBarcodeModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
 
   const [now, setNow] = useState<Date | null>(null);
   useEffect(() => { setNow(new Date()); }, []);
 
   const alerts = useInventoryAlerts(medicines, now);
+  const reorderSuggestions = useReorderSuggestions(medicines, sales, now);
 
   // ── Filter + Search ───────────────────────────────────────────────────────
   const afterFilter = medicines.filter((m) => {
@@ -114,6 +118,27 @@ export default function MedicinesPage() {
         `Stock updated: ${med.name} → ${Math.max(0, med.stock + adjustment)} ${med.unit}s`
       );
     }
+  };
+
+  const handleBulkImport = (imported: Omit<Medicine, "id" | "createdAt" | "updatedAt">[]) => {
+    imported.forEach((m) => addMedicine(m));
+    toast.success(`${imported.length} medicines imported`);
+  };
+
+  const handleExportCSV = () => {
+    const headers = ["name","genericName","brand","category","unit","batchNumber","expiryDate","purchasePrice","sellingPrice","stock","minStock","requiresPrescription"];
+    const rows = medicines.map((m) => headers.map((h) => {
+      const val = (m as unknown as Record<string, unknown>)[h];
+      return typeof val === "string" && val.includes(",") ? `"${val}"` : String(val ?? "");
+    }).join(","));
+    const csv = [headers.join(","), ...rows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `medicines_${new Date().toISOString().split("T")[0]}.csv`;
+    a.click();
+    toast.success(`Exported ${medicines.length} medicines`);
   };
 
   return (
@@ -215,14 +240,72 @@ export default function MedicinesPage() {
             </div>
           </div>
 
-          <Button onClick={handleAdd} className="shrink-0">
-            <Plus size={16} />
-            Add Medicine
-          </Button>
+          <div className="flex items-center gap-2 shrink-0">
+            <Button size="sm" variant="outline" onClick={() => setShowBarcodeModal(true)}>
+              <Barcode size={14} />Labels
+            </Button>
+            <Button size="sm" variant="outline" onClick={handleExportCSV}>
+              <Download size={14} />Export
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setShowImportModal(true)}>
+              <Upload size={14} />Import
+            </Button>
+            <Button onClick={handleAdd} className="shrink-0">
+              <Plus size={16} />Add Medicine
+            </Button>
+          </div>
         </div>
 
+        {/* ── Tabs ──────────────────────────────────────────────────────── */}
+        <div className="flex gap-1 border-b border-gray-200">
+          <button onClick={() => setActiveTab("catalogue")}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${activeTab === "catalogue" ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-700"}`}>
+            Medicine Catalogue
+          </button>
+          <button onClick={() => setActiveTab("reorder")}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 ${activeTab === "reorder" ? "border-blue-600 text-blue-600" : "border-transparent text-gray-500 hover:text-gray-700"}`}>
+            <TrendingDown size={14} />Reorder Suggestions
+            {reorderSuggestions.length > 0 && (
+              <span className="bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full leading-none">{reorderSuggestions.length}</span>
+            )}
+          </button>
+        </div>
+
+        {/* ── Reorder Suggestions Panel ─────────────────────────────────── */}
+        {activeTab === "reorder" && (
+          <div className="space-y-3">
+            {reorderSuggestions.length === 0 ? (
+              <div className="bg-white rounded-xl border border-gray-200 p-16 text-center">
+                <RefreshCw size={32} className="mx-auto mb-3 text-gray-300" strokeWidth={1.5} />
+                <p className="text-gray-500 font-medium">No reorder suggestions</p>
+                <p className="text-sm text-gray-400 mt-1">All medicines are adequately stocked</p>
+              </div>
+            ) : reorderSuggestions.map((sug) => (
+              <div key={sug.medicine.id}
+                className={`bg-white rounded-xl border p-4 flex items-center gap-4 ${sug.priority === "Critical" ? "border-red-200 bg-red-50/30" : sug.priority === "High" ? "border-yellow-200 bg-yellow-50/30" : "border-blue-200 bg-blue-50/30"}`}>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-0.5">
+                    <p className="text-sm font-semibold text-gray-900">{sug.medicine.name}</p>
+                    <Badge variant={sug.priority === "Critical" ? "danger" : sug.priority === "High" ? "warning" : "info"}>{sug.priority}</Badge>
+                  </div>
+                  <p className="text-xs text-gray-500">{sug.medicine.genericName} • {sug.medicine.brand}</p>
+                  <p className="text-xs text-gray-500 mt-1">{sug.reason}</p>
+                </div>
+                <div className="text-right shrink-0 space-y-1">
+                  <div><span className="text-xs text-gray-400">Current: </span><span className={`text-sm font-bold ${sug.currentStock === 0 ? "text-red-600" : "text-yellow-600"}`}>{sug.currentStock}</span></div>
+                  <div><span className="text-xs text-gray-400">Order: </span><span className="text-sm font-bold text-blue-600">{sug.suggestedQty}</span></div>
+                  {sug.avgDailySales !== undefined && sug.avgDailySales > 0 && (
+                    <div className="text-xs text-gray-400">{sug.avgDailySales.toFixed(1)}/day avg</div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+
         {/* ── Table ─────────────────────────────────────────────────────── */}
-        <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto shadow-sm">
+        {activeTab === "catalogue" && <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto shadow-sm">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
@@ -263,7 +346,7 @@ export default function MedicinesPage() {
               {sorted.length} of {medicines.length} medicines
             </div>
           )}
-        </div>
+        </div>}
       </div>
 
       {/* ── Modals ──────────────────────────────────────────────────────────── */}
@@ -316,6 +399,12 @@ export default function MedicinesPage() {
           </div>
         </div>
       )}
+
+      {/* Barcode Labels */}
+      <BarcodeLabelModal isOpen={showBarcodeModal} onClose={() => setShowBarcodeModal(false)} medicines={medicines} />
+
+      {/* Bulk Import */}
+      <BulkImportModal isOpen={showImportModal} onClose={() => setShowImportModal(false)} onImport={handleBulkImport} />
     </div>
   );
 }

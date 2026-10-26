@@ -2,31 +2,42 @@
 
 import { useState, useEffect } from "react";
 import {
-  Store, Receipt, Shield, Palette, Trash2, Plus, Check,
+  Store, Receipt, Shield, Palette, Trash2, Plus, Check, Users, Pencil,
 } from "lucide-react";
 import Header from "@/components/layout/Header";
 import Card, { CardHeader } from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import Badge from "@/components/ui/Badge";
+import Modal from "@/components/ui/Modal";
 import { usePharmacyStore } from "@/store";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { ThemeColor } from "@/types";
+import { ThemeColor, User, UserRole } from "@/types";
 import { THEMES } from "@/lib/themes";
 import toast from "react-hot-toast";
 
-type SettingsTab = "pharmacy" | "pos" | "permissions" | "appearance" | "expenses";
+type SettingsTab = "pharmacy" | "pos" | "permissions" | "appearance" | "expenses" | "users";
+
+const ROLES: UserRole[] = ["Admin", "Manager", "Cashier", "Pharmacist"];
+
+const EMPTY_USER = { username: "", name: "", email: "", role: "Cashier" as UserRole, pin: "", isActive: true, branch: "Main Branch" };
 
 export default function SettingsPage() {
-  const { settings, updateSettings, expenses, addExpense, deleteExpense } = usePharmacyStore();
+  const { settings, updateSettings, expenses, addExpense, deleteExpense, users, addUser, updateUser, deleteUser } = usePharmacyStore();
 
   const [tab, setTab] = useState<SettingsTab>("pharmacy");
+  const [userModal, setUserModal] = useState(false);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [userForm, setUserForm] = useState(EMPTY_USER);
 
   // Local copies so we can edit and save atomically
   const [pharForm, setPharForm] = useState({
     pharmacyName: settings.pharmacyName,
     address: settings.address,
     phone: settings.phone,
+    licenseNumber: settings.licenseNumber ?? "",
+    taxNumber: settings.taxNumber ?? "",
+    footerText: settings.footerText ?? "",
   });
 
   const [posForm, setPosForm] = useState({
@@ -34,6 +45,8 @@ export default function SettingsPage() {
     invoicePrefix: settings.invoicePrefix,
     currency: settings.currency,
     lowStockThreshold: String(settings.lowStockThreshold),
+    expiryWarnDays: String(settings.expiryWarnDays ?? 90),
+    autoLogoutMinutes: String(settings.autoLogoutMinutes ?? 30),
     receiptTemplate: settings.receiptTemplate,
   });
 
@@ -42,6 +55,8 @@ export default function SettingsPage() {
     allowBillDiscount: settings.allowBillDiscount,
     allowSplitPayment: settings.allowSplitPayment,
     allowHoldSale: settings.allowHoldSale,
+    allowCreditSales: settings.allowCreditSales ?? true,
+    requireRxUpload: settings.requireRxUpload ?? false,
   });
 
   // Keep local in sync if store changes externally
@@ -50,12 +65,17 @@ export default function SettingsPage() {
       pharmacyName: settings.pharmacyName,
       address: settings.address,
       phone: settings.phone,
+      licenseNumber: settings.licenseNumber ?? "",
+      taxNumber: settings.taxNumber ?? "",
+      footerText: settings.footerText ?? "",
     });
     setPosForm({
       taxRate: String(settings.taxRate * 100),
       invoicePrefix: settings.invoicePrefix,
       currency: settings.currency,
       lowStockThreshold: String(settings.lowStockThreshold),
+      expiryWarnDays: String(settings.expiryWarnDays ?? 90),
+      autoLogoutMinutes: String(settings.autoLogoutMinutes ?? 30),
       receiptTemplate: settings.receiptTemplate,
     });
     setPermForm({
@@ -63,6 +83,8 @@ export default function SettingsPage() {
       allowBillDiscount: settings.allowBillDiscount,
       allowSplitPayment: settings.allowSplitPayment,
       allowHoldSale: settings.allowHoldSale,
+      allowCreditSales: settings.allowCreditSales ?? true,
+      requireRxUpload: settings.requireRxUpload ?? false,
     });
   }, [settings]);
 
@@ -83,7 +105,14 @@ export default function SettingsPage() {
   const savePharForm = (e: React.FormEvent) => {
     e.preventDefault();
     if (!pharForm.pharmacyName.trim()) { toast.error("Pharmacy name required"); return; }
-    updateSettings(pharForm);
+    updateSettings({
+      pharmacyName: pharForm.pharmacyName,
+      address: pharForm.address,
+      phone: pharForm.phone,
+      licenseNumber: pharForm.licenseNumber || undefined,
+      taxNumber: pharForm.taxNumber || undefined,
+      footerText: pharForm.footerText || undefined,
+    });
     toast.success("Pharmacy info saved");
   };
 
@@ -91,12 +120,16 @@ export default function SettingsPage() {
     e.preventDefault();
     const taxRate = Math.max(0, Math.min(100, Number(posForm.taxRate))) / 100;
     const lowStockThreshold = Math.max(1, Number(posForm.lowStockThreshold));
+    const expiryWarnDays = Math.max(1, Number(posForm.expiryWarnDays));
+    const autoLogoutMinutes = Math.max(1, Number(posForm.autoLogoutMinutes));
     if (!posForm.invoicePrefix.trim()) { toast.error("Invoice prefix required"); return; }
     updateSettings({
       taxRate,
       invoicePrefix: posForm.invoicePrefix.trim().toUpperCase(),
       currency: posForm.currency,
       lowStockThreshold,
+      expiryWarnDays,
+      autoLogoutMinutes,
       receiptTemplate: posForm.receiptTemplate,
     });
     toast.success("POS settings saved");
@@ -121,12 +154,40 @@ export default function SettingsPage() {
   };
 
   const TABS: { key: SettingsTab; label: string; icon: React.ElementType }[] = [
-    { key: "pharmacy",   label: "Pharmacy Info",  icon: Store    },
-    { key: "pos",        label: "POS & Billing",   icon: Receipt  },
-    { key: "permissions",label: "Permissions",     icon: Shield   },
-    { key: "appearance", label: "Appearance",      icon: Palette  },
-    { key: "expenses",   label: "Expenses",        icon: Trash2   },
+    { key: "pharmacy",    label: "Pharmacy Info",  icon: Store    },
+    { key: "pos",         label: "POS & Billing",  icon: Receipt  },
+    { key: "permissions", label: "Permissions",    icon: Shield   },
+    { key: "appearance",  label: "Appearance",     icon: Palette  },
+    { key: "expenses",    label: "Expenses",       icon: Trash2   },
+    { key: "users",       label: "User Management",icon: Users    },
   ];
+
+  // ── User form handlers ─────────────────────────────────────────────────────
+  const openAddUser = () => {
+    setEditingUser(null);
+    setUserForm(EMPTY_USER);
+    setUserModal(true);
+  };
+
+  const openEditUser = (u: User) => {
+    setEditingUser(u);
+    setUserForm({ username: u.username, name: u.name, email: u.email, role: u.role, pin: u.pin ?? "", isActive: u.isActive, branch: u.branch ?? "Main Branch" });
+    setUserModal(true);
+  };
+
+  const handleSaveUser = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!userForm.username || !userForm.name || !userForm.email) { toast.error("Fill in all required fields"); return; }
+    if (userForm.pin && (userForm.pin.length !== 4 || !/^\d+$/.test(userForm.pin))) { toast.error("PIN must be exactly 4 digits"); return; }
+    if (editingUser) {
+      updateUser(editingUser.id, { ...userForm, pin: userForm.pin || undefined });
+      toast.success("User updated");
+    } else {
+      addUser({ ...userForm, pin: userForm.pin || undefined });
+      toast.success("User added");
+    }
+    setUserModal(false);
+  };
 
   const selectCls = "w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white";
 
@@ -188,12 +249,36 @@ export default function SettingsPage() {
                   onChange={(e) => setPharForm({ ...pharForm, address: e.target.value })}
                   placeholder="Full address"
                 />
-                <Input
-                  label="Phone Number"
-                  value={pharForm.phone}
-                  onChange={(e) => setPharForm({ ...pharForm, phone: e.target.value })}
-                  placeholder="021-XXXXXXXX"
-                />
+                <div className="grid grid-cols-2 gap-4">
+                  <Input
+                    label="Phone Number"
+                    value={pharForm.phone}
+                    onChange={(e) => setPharForm({ ...pharForm, phone: e.target.value })}
+                    placeholder="021-XXXXXXXX"
+                  />
+                  <Input
+                    label="License Number"
+                    value={pharForm.licenseNumber}
+                    onChange={(e) => setPharForm({ ...pharForm, licenseNumber: e.target.value })}
+                    placeholder="DL-XXXX"
+                  />
+                  <Input
+                    label="Tax / NTN Number"
+                    value={pharForm.taxNumber}
+                    onChange={(e) => setPharForm({ ...pharForm, taxNumber: e.target.value })}
+                    placeholder="NTN-XXXXXXX"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Receipt Footer Text</label>
+                  <textarea
+                    value={pharForm.footerText}
+                    onChange={(e) => setPharForm({ ...pharForm, footerText: e.target.value })}
+                    rows={2}
+                    placeholder="Thank you for your purchase!"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
                 <div className="pt-2">
                   <Button type="submit">Save Changes</Button>
                 </div>
@@ -233,12 +318,28 @@ export default function SettingsPage() {
                     placeholder="PKR"
                   />
                   <Input
-                    label="Low Stock Alert Threshold"
+                    label="Low Stock Threshold"
                     type="number"
                     min={1}
                     value={posForm.lowStockThreshold}
                     onChange={(e) => setPosForm({ ...posForm, lowStockThreshold: e.target.value })}
                     placeholder="10"
+                  />
+                  <Input
+                    label="Expiry Warning (days)"
+                    type="number"
+                    min={1}
+                    value={posForm.expiryWarnDays}
+                    onChange={(e) => setPosForm({ ...posForm, expiryWarnDays: e.target.value })}
+                    placeholder="90"
+                  />
+                  <Input
+                    label="Auto Logout (minutes)"
+                    type="number"
+                    min={1}
+                    value={posForm.autoLogoutMinutes}
+                    onChange={(e) => setPosForm({ ...posForm, autoLogoutMinutes: e.target.value })}
+                    placeholder="30"
                   />
                 </div>
 
@@ -310,6 +411,16 @@ export default function SettingsPage() {
                     key: "allowHoldSale" as const,
                     label: "Hold / Resume Sale",
                     desc: "Allow cashier to pause an in-progress sale and resume later",
+                  },
+                  {
+                    key: "allowCreditSales" as const,
+                    label: "Credit Sales (Udhaar)",
+                    desc: "Allow sales on credit — customer pays later",
+                  },
+                  {
+                    key: "requireRxUpload" as const,
+                    label: "Require Rx Upload",
+                    desc: "Mandate prescription image upload for Rx and controlled items",
                   },
                 ].map(({ key, label, desc }) => (
                   <div
@@ -534,8 +645,90 @@ export default function SettingsPage() {
               </Card>
             </div>
           )}
+
+          {/* ── Users ── */}
+          {tab === "users" && (
+            <div className="space-y-6">
+              <Card padding={false}>
+                <div className="p-6 pb-4 flex items-center justify-between">
+                  <CardHeader
+                    title="User Management"
+                    subtitle={`${users.length} users`}
+                  />
+                  <Button size="sm" onClick={openAddUser}><Plus size={14} />Add User</Button>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-gray-50 border-y border-gray-100">
+                        {["Name", "Username", "Email", "Role", "PIN", "Branch", "Status", ""].map((h) => (
+                          <th key={h} className="px-4 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {users.map((u) => (
+                        <tr key={u.id} className="hover:bg-gray-50 group">
+                          <td className="px-4 py-3 font-semibold text-gray-800">{u.name}</td>
+                          <td className="px-4 py-3 font-mono text-xs text-gray-600">@{u.username}</td>
+                          <td className="px-4 py-3 text-gray-500 text-xs">{u.email}</td>
+                          <td className="px-4 py-3"><Badge>{u.role}</Badge></td>
+                          <td className="px-4 py-3 font-mono text-gray-400 text-xs">{u.pin ? "••••" : "—"}</td>
+                          <td className="px-4 py-3 text-gray-500 text-xs">{u.branch ?? "—"}</td>
+                          <td className="px-4 py-3">
+                            <Badge variant={u.isActive ? "success" : "danger"}>{u.isActive ? "Active" : "Inactive"}</Badge>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button onClick={() => openEditUser(u)} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg"><Pencil size={13} /></button>
+                              <button
+                                onClick={() => { updateUser(u.id, { isActive: !u.isActive }); toast.success(u.isActive ? "User deactivated" : "User activated"); }}
+                                className={`p-1.5 rounded-lg ${u.isActive ? "text-red-400 hover:bg-red-50" : "text-green-500 hover:bg-green-50"}`}
+                                title={u.isActive ? "Deactivate" : "Activate"}
+                              >
+                                {u.isActive ? <Trash2 size={13} /> : <Check size={13} />}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* ── User Modal ── */}
+      <Modal isOpen={userModal} onClose={() => setUserModal(false)} title={editingUser ? "Edit User" : "Add New User"} size="md">
+        <form onSubmit={handleSaveUser} className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <Input label="Full Name *" value={userForm.name} onChange={(e) => setUserForm({ ...userForm, name: e.target.value })} placeholder="Ali Hassan" required />
+            <Input label="Username *" value={userForm.username} onChange={(e) => setUserForm({ ...userForm, username: e.target.value })} placeholder="ali" required />
+            <Input label="Email *" type="email" value={userForm.email} onChange={(e) => setUserForm({ ...userForm, email: e.target.value })} placeholder="ali@pharmacy.com" required />
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Role *</label>
+              <select value={userForm.role} onChange={(e) => setUserForm({ ...userForm, role: e.target.value as UserRole })}
+                className={selectCls}>
+                {ROLES.map((r) => <option key={r}>{r}</option>)}
+              </select>
+            </div>
+            <Input label="4-digit PIN (for quick switch)" value={userForm.pin} onChange={(e) => setUserForm({ ...userForm, pin: e.target.value.replace(/\D/g, "").slice(0, 4) })} placeholder="e.g. 1234" maxLength={4} />
+            <Input label="Branch" value={userForm.branch} onChange={(e) => setUserForm({ ...userForm, branch: e.target.value })} placeholder="Main Branch" />
+          </div>
+          <div className="flex items-center gap-2.5">
+            <input id="u-active" type="checkbox" checked={userForm.isActive} onChange={(e) => setUserForm({ ...userForm, isActive: e.target.checked })}
+              className="w-4 h-4 rounded border-gray-300 accent-blue-600" />
+            <label htmlFor="u-active" className="text-sm text-gray-700 cursor-pointer">User is active</label>
+          </div>
+          <div className="flex gap-3 pt-2 border-t border-gray-100">
+            <Button variant="outline" type="button" className="flex-1" onClick={() => setUserModal(false)}>Cancel</Button>
+            <Button type="submit" className="flex-1">{editingUser ? "Save Changes" : "Create User"}</Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

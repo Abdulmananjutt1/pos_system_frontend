@@ -21,7 +21,7 @@ import { formatCurrency, isExpiringSoon, isExpired, formatDate } from "@/lib/uti
 import { useInventoryAlerts } from "@/hooks/useInventoryAlerts";
 import {
   useDashboardStats, useTopMedicines, useSalesTrend,
-  getDateBounds, DateRange,
+  getDateBounds, DateRange, UNSET_DATE_BOUNDS,
 } from "@/hooks/useDashboardStats";
 import toast from "react-hot-toast";
 
@@ -52,7 +52,10 @@ export default function DashboardPage() {
     setExpForm((f) => ({ ...f, date: new Date().toISOString().split("T")[0] }));
   }, []);
 
-  const bounds = useMemo(() => getDateBounds(dateRange), [dateRange]);
+  const bounds = useMemo(
+    () => (now ? getDateBounds(dateRange, now) : UNSET_DATE_BOUNDS),
+    [dateRange, now]
+  );
   const alerts = useInventoryAlerts(medicines, now);
   const kpis = useDashboardStats(sales, expenses, medicines, now, bounds);
   const topMeds = useTopMedicines(sales, medicines, bounds, 5);

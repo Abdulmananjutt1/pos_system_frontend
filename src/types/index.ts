@@ -9,12 +9,24 @@ export interface Medicine {
   expiryDate: string;
   purchasePrice: number;
   sellingPrice: number;
+  mrp?: number;
+  tradePrice?: number;
+  taxRate?: number;
+  defaultDiscount?: number;
+  strength?: string;
+  packSize?: string;
+  form?: string;
+  shelfLocation?: string;
   stock: number;
   minStock: number;
+  maxStock?: number;
   unit: string;
   supplierId: string;
   description?: string;
   requiresPrescription: boolean;
+  isControlled?: boolean;
+  isColdChain?: boolean;
+  isActive?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -30,6 +42,19 @@ export type MedicineCategory =
   | "Supplement"
   | "Other";
 
+// ─── Medicine Batch ───────────────────────────────────────────────────────────
+export interface MedicineBatch {
+  id: string;
+  medicineId: string;
+  batchNumber: string;
+  expiryDate: string;
+  purchasePrice: number;
+  sellingPrice: number;
+  quantity: number;
+  supplierId?: string;
+  createdAt: string;
+}
+
 // ─── Customer ─────────────────────────────────────────────────────────────────
 export interface Customer {
   id: string;
@@ -37,6 +62,8 @@ export interface Customer {
   phone: string;
   email?: string;
   address?: string;
+  creditLimit?: number;
+  creditBalance?: number;
   totalPurchases: number;
   createdAt: string;
 }
@@ -60,6 +87,10 @@ export interface SaleItem {
   unitPrice: number;
   discount: number;
   total: number;
+  batchId?: string;
+  expiryDate?: string;
+  prescriptionRequired?: boolean;
+  prescriptionImageUrl?: string;
 }
 
 export interface Sale {
@@ -73,12 +104,18 @@ export interface Sale {
   tax: number;
   total: number;
   paymentMethod: PaymentMethod;
+  splitPayments?: SplitPaymentEntry[];
   status: SaleStatus;
-  createdAt: string;
+  isCredit?: boolean;
+  doctorName?: string;
+  patientName?: string;
+  prescriptionNote?: string;
   cashierName: string;
+  shiftId?: string;
+  createdAt: string;
 }
 
-export type PaymentMethod = "Cash" | "Card" | "UBL" | "JazzCash" | "EasyPaisa";
+export type PaymentMethod = "Cash" | "Card" | "UBL" | "JazzCash" | "EasyPaisa" | "Credit";
 export type SaleStatus = "Completed" | "Pending" | "Refunded" | "Held";
 
 // ─── Split Payment ────────────────────────────────────────────────────────────
@@ -98,6 +135,164 @@ export interface HeldSale {
   heldAt: string;
 }
 
+// ─── Return / Refund ─────────────────────────────────────────────────────────
+export type ReturnReason = "Defective" | "Expired" | "Wrong Item" | "Customer Request" | "Other";
+export type ReturnCondition = "Good" | "Opened" | "Damaged" | "Expired";
+export type ReturnStatus = "Approved" | "Rejected" | "Partial";
+
+export interface ReturnItem {
+  medicineId: string;
+  medicineName: string;
+  saleQuantity: number;
+  returnQuantity: number;
+  unitPrice: number;
+  reason: ReturnReason;
+  condition: ReturnCondition;
+}
+
+export interface SaleReturn {
+  id: string;
+  returnNumber: string;
+  saleId: string;
+  invoiceNumber: string;
+  returnDate: string;
+  items: ReturnItem[];
+  reason: string;
+  notes?: string;
+  refundAmount: number;
+  refundMethod: PaymentMethod;
+  status: ReturnStatus;
+  createdAt: string;
+}
+
+// ─── Purchase Order ───────────────────────────────────────────────────────────
+export type POStatus = "Draft" | "Sent" | "Confirmed" | "PartiallyReceived" | "Received" | "Cancelled";
+
+export interface PurchaseOrderItem {
+  medicineId: string;
+  medicineName: string;
+  quantity: number;
+  unitPrice: number;
+  receivedQuantity: number;
+  total: number;
+  batchNumber?: string;
+  expiryDate?: string;
+}
+
+export interface PurchaseOrder {
+  id: string;
+  poNumber: string;
+  supplierId: string;
+  supplierName: string;
+  items: PurchaseOrderItem[];
+  poDate: string;
+  expectedDeliveryDate?: string;
+  status: POStatus;
+  totalAmount: number;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ─── Stock Transfer ───────────────────────────────────────────────────────────
+export type TransferStatus = "Pending" | "InTransit" | "Received" | "Rejected";
+
+export interface StockTransferItem {
+  medicineId: string;
+  medicineName: string;
+  quantity: number;
+  batchNumber?: string;
+  expiryDate?: string;
+}
+
+export interface StockTransfer {
+  id: string;
+  transferNumber: string;
+  fromBranch: string;
+  toBranch: string;
+  items: StockTransferItem[];
+  transferDate: string;
+  receiveDate?: string;
+  status: TransferStatus;
+  notes?: string;
+  initiatedBy: string;
+  createdAt: string;
+}
+
+// ─── Stock Count ──────────────────────────────────────────────────────────────
+export type StockCountStatus = "Draft" | "InProgress" | "Completed" | "Verified";
+
+export interface StockCountItem {
+  medicineId: string;
+  medicineName: string;
+  batchNumber: string;
+  systemStock: number;
+  physicalCount: number | null;
+  variance: number;
+}
+
+export interface StockCount {
+  id: string;
+  countNumber: string;
+  countDate: string;
+  status: StockCountStatus;
+  items: StockCountItem[];
+  notes?: string;
+  createdAt: string;
+}
+
+// ─── Cash Drawer Shift ────────────────────────────────────────────────────────
+export type ShiftStatus = "Open" | "Closed";
+
+export interface ShiftEntry {
+  description: string;
+  amount: number;
+  type: "in" | "out";
+  time: string;
+}
+
+export interface CashShift {
+  id: string;
+  shiftNumber: string;
+  openedBy: string;
+  closedBy?: string;
+  openTime: string;
+  closeTime?: string;
+  openingBalance: number;
+  closingBalance?: number;
+  expectedCash?: number;
+  variance?: number;
+  cashEntries: ShiftEntry[];
+  status: ShiftStatus;
+  notes?: string;
+}
+
+// ─── User & Auth ──────────────────────────────────────────────────────────────
+export type UserRole = "Admin" | "Manager" | "Cashier" | "Pharmacist";
+
+export interface User {
+  id: string;
+  username: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  pin?: string; // 4-digit PIN hash
+  isActive: boolean;
+  branch?: string;
+  createdAt: string;
+}
+
+export interface LoginHistoryEntry {
+  id: string;
+  userId: string;
+  username: string;
+  name: string;
+  role: UserRole;
+  action: "Login" | "Logout" | "PIN Switch" | "Session Timeout" | "Force Logout";
+  time: string;
+  ipAddress?: string;
+}
+
 // ─── Expense ──────────────────────────────────────────────────────────────────
 export interface Expense {
   id: string;
@@ -105,6 +300,7 @@ export interface Expense {
   amount: number;
   category: string;
   date: string;
+  shiftId?: string;
   createdAt: string;
 }
 
@@ -116,16 +312,26 @@ export interface AppSettings {
   pharmacyName: string;
   address: string;
   phone: string;
-  taxRate: number;           // 0–1 (e.g. 0.17 for 17%)
-  invoicePrefix: string;     // e.g. "INV"
+  licenseNumber?: string;
+  taxNumber?: string;
+  footerText?: string;
+  logoUrl?: string;
+  taxRate: number;
+  invoicePrefix: string;
   currency: string;
   lowStockThreshold: number;
+  expiryWarnDays: number;
   receiptTemplate: "thermal" | "a4";
   allowLineDiscount: boolean;
   allowBillDiscount: boolean;
   allowSplitPayment: boolean;
   allowHoldSale: boolean;
+  allowCreditSales: boolean;
+  requireRxUpload: boolean;
+  autoLogoutMinutes: number;
   themeColor: ThemeColor;
+  branches: string[];
+  currentBranch: string;
 }
 
 // ─── Branch ───────────────────────────────────────────────────────────────────

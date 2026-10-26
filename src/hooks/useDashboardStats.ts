@@ -11,8 +11,13 @@ export interface DateBounds {
   to: Date;
 }
 
-export function getDateBounds(range: DateRange, custom?: DateBounds): DateBounds {
-  const now = new Date();
+/** Stable placeholder so Client Components can prerender without `new Date()`. */
+export const UNSET_DATE_BOUNDS: DateBounds = {
+  from: new Date(0),
+  to: new Date(0),
+};
+
+export function getDateBounds(range: DateRange, now: Date, custom?: DateBounds): DateBounds {
   const startOf = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
   const endOf = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
 

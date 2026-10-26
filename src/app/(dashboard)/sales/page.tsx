@@ -2,7 +2,8 @@
 
 import { useState, useCallback } from "react";
 import {
-  ShoppingCart, History, Scan, PauseCircle,
+  ShoppingCart, History, Scan, PauseCircle, Key, Banknote,
+  ClipboardPen,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -16,6 +17,10 @@ import InvoicePrint from "@/components/sales/InvoicePrint";
 import SaleHistoryPanel from "@/components/sales/SaleHistoryPanel";
 import QuickAddCustomerModal from "@/components/sales/QuickAddCustomerModal";
 import HeldSalesDrawer from "@/components/sales/HeldSalesDrawer";
+import PINPadModal from "@/components/sales/PINPadModal";
+import CashShiftModal from "@/components/sales/CashShiftModal";
+import PrescriptionModal, { PrescriptionData } from "@/components/sales/PrescriptionModal";
+import GenericSubstitutionModal from "@/components/sales/GenericSubstitutionModal";
 
 import { usePharmacyStore } from "@/store";
 import { useCartCalculations } from "@/hooks/useCartCalculations";
@@ -34,6 +39,7 @@ export default function SalesPage() {
     heldSales,
     selectedCustomer,
     settings,
+    currentShift,
     addToCart,
     removeFromCart,
     updateCartQuantity,
@@ -59,6 +65,13 @@ export default function SalesPage() {
   const [completedSale, setCompletedSale] = useState<Sale | null>(null);
   const [showInvoice, setShowInvoice] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [showPIN, setShowPIN] = useState(false);
+  const [showShift, setShowShift] = useState(false);
+  const [shiftMode, setShiftMode] = useState<"open" | "close" | "summary">("open");
+  const [showPrescriptionModal, setShowPrescriptionModal] = useState(false);
+  const [prescriptionData, setPrescriptionData] = useState<PrescriptionData | null>(null);
+  const [showGenericModal, setShowGenericModal] = useState(false);
+  const [genericSource, setGenericSource] = useState<Medicine | null>(null);
 
   // ── Discount ───────────────────────────────────────────────────────────────
   const subtotalRaw = cart.reduce((s, i) => s + i.total, 0);
@@ -97,6 +110,12 @@ export default function SalesPage() {
     if (med.stock === 0) { toast.error(`${med.name} is out of stock`); return; }
     addToCart(med);
     toast.success(`${med.name} added`);
+    // Check for generic substitutes
+    const subs = medicines.filter((m) => m.genericName === med.genericName && m.id !== med.id && m.stock > 0);
+    if (subs.length > 0) {
+      setGenericSource(med);
+      setShowGenericModal(true);
+    }
   };
 
   const handleCheckout = () => {
@@ -112,13 +131,18 @@ export default function SalesPage() {
   const finalizeSale = (pm: string, discount: number, splits?: SplitPaymentEntry[]) => {
     setIsProcessing(true);
     setTimeout(() => {
-      const sale = completeSale(pm, discount, splits);
+      const sale = completeSale(pm, discount, splits, prescriptionData ? {
+        doctorName: prescriptionData.doctorName || undefined,
+        patientName: prescriptionData.patientName || undefined,
+        prescriptionNote: prescriptionData.prescriptionNote || undefined,
+      } : {});
       setIsProcessing(false);
       if (sale) {
         setCompletedSale(sale);
         setShowPaymentModal(false);
         setShowSplitModal(false);
         discountState.reset();
+        setPrescriptionData(null);
         toast.success(`✓ Invoice ${sale.invoiceNumber} completed!`);
         setShowInvoice(true);
       }
@@ -161,43 +185,57 @@ export default function SalesPage() {
       {/* ── Tab bar ─────────────────────────────────────────────────────── */}
       <div className="bg-white border-b border-gray-200 px-4 flex items-center justify-between py-2">
         <div className="flex items-center gap-1">
-          <TabButton
-            active={tab === "pos"}
-            onClick={() => setTab("pos")}
-            icon={<ShoppingCart size={15} />}
-            label="New Sale"
-            badge={cart.length > 0 ? cart.length : undefined}
-          />
-          <TabButton
-            active={tab === "history"}
-            onClick={() => setTab("history")}
-            icon={<History size={15} />}
-            label="Sale History"
-          />
+          <TabButton active={tab === "pos"} onClick={() => setTab("pos")} icon={<ShoppingCart size={15} />} label="New Sale" badge={cart.length > 0 ? cart.length : undefined} />
+          <TabButton active={tab === "history"} onClick={() => setTab("history")} icon={<History size={15} />} label="Sale History" />
         </div>
 
-        {/* Hold button */}
-        {tab === "pos" && settings.allowHoldSale && (
-          <div className="flex items-center gap-2">
-            {heldSales.length > 0 && (
-              <button
-                onClick={() => setShowHeldDrawer(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors"
-              >
-                <PauseCircle size={13} />
-                {heldSales.length} Held
+        <div className="flex items-center gap-2">
+          {/* Cash shift */}
+          {tab === "pos" && (
+            currentShift ? (
+              <button onClick={() => { setShiftMode("summary"); setShowShift(true); }}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-green-700 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition-colors">
+                <Banknote size={13} />Shift Open
               </button>
-            )}
-            <button
-              onClick={handleHold}
-              disabled={cart.length === 0}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:border-amber-300 hover:text-amber-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <PauseCircle size={13} />
-              Hold Sale
+            ) : (
+              <button onClick={() => { setShiftMode("open"); setShowShift(true); }}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:border-green-300 hover:text-green-700 transition-colors">
+                <Banknote size={13} />Open Shift
+              </button>
+            )
+          )}
+
+          {/* Prescription */}
+          {tab === "pos" && (
+            <button onClick={() => setShowPrescriptionModal(true)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border rounded-lg transition-colors ${prescriptionData?.doctorName ? "text-purple-700 bg-purple-50 border-purple-200" : "text-gray-600 bg-white border-gray-200 hover:border-purple-300 hover:text-purple-700"}`}>
+              <ClipboardPen size={13} />
+              {prescriptionData?.doctorName ? `Rx: ${prescriptionData.doctorName}` : "Add Rx"}
             </button>
-          </div>
-        )}
+          )}
+
+          {/* Hold button */}
+          {tab === "pos" && settings.allowHoldSale && (
+            <>
+              {heldSales.length > 0 && (
+                <button onClick={() => setShowHeldDrawer(true)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors">
+                  <PauseCircle size={13} />{heldSales.length} Held
+                </button>
+              )}
+              <button onClick={handleHold} disabled={cart.length === 0}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:border-amber-300 hover:text-amber-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                <PauseCircle size={13} />Hold Sale
+              </button>
+            </>
+          )}
+
+          {/* PIN switch */}
+          <button onClick={() => setShowPIN(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:border-blue-300 hover:text-blue-700 transition-colors">
+            <Key size={13} />Switch User
+          </button>
+        </div>
       </div>
 
       {/* ── Main ────────────────────────────────────────────────────────── */}
@@ -302,6 +340,35 @@ export default function SalesPage() {
         onClose={() => setShowHeldDrawer(false)}
         onResume={resumeHeld}
         onDelete={deleteHeld}
+      />
+
+      {/* PIN Pad */}
+      <PINPadModal isOpen={showPIN} onClose={() => setShowPIN(false)} />
+
+      {/* Cash Shift */}
+      <CashShiftModal isOpen={showShift} onClose={() => setShowShift(false)} mode={shiftMode} />
+
+      {/* Prescription */}
+      <PrescriptionModal
+        isOpen={showPrescriptionModal}
+        onClose={() => setShowPrescriptionModal(false)}
+        onSave={setPrescriptionData}
+        initial={prescriptionData}
+        hasRxItems={cart.some((i) => i.prescriptionRequired)}
+      />
+
+      {/* Generic Substitution */}
+      <GenericSubstitutionModal
+        isOpen={showGenericModal}
+        onClose={() => setShowGenericModal(false)}
+        sourceMedicine={genericSource}
+        substitutes={genericSource ? medicines.filter((m) => m.genericName === genericSource.genericName && m.id !== genericSource.id && m.stock > 0) : []}
+        onSelect={(med) => {
+          // Remove original from cart, add substitute
+          if (genericSource) removeFromCart(genericSource.id);
+          addToCart(med);
+          toast.success(`Switched to ${med.name}`);
+        }}
       />
     </div>
   );
