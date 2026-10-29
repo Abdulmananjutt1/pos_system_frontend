@@ -36,14 +36,13 @@ export function middleware(request: NextRequest) {
     !pathname.startsWith("/api") &&
     !pathname.startsWith("/favicon");
 
-  // Not logged in → cashier login
+  // Not logged in → send to cashier login (default)
   if (isDashboard && !token) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
   // Already logged in → away from auth pages
   if (isAuthPage && token) {
-    // Admin goes to dashboard, cashier goes to sales
     const dest = userRole === "admin" ? "/" : "/sales";
     return NextResponse.redirect(new URL(dest, request.url));
   }

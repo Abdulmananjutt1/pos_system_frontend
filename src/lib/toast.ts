@@ -1,6 +1,12 @@
+/**
+ * Central toast utility.
+ * Maps raw backend messages to clean, user-friendly English messages.
+ */
+
 import toast from "react-hot-toast";
 
 const MESSAGE_MAP: Record<string, string> = {
+  // Medicine
   "Medicine name is required":               "Medicine name is required",
   "Selling price must be a valid number":    "Please enter a valid selling price",
   "Stock must be a valid number":            "Please enter a valid stock quantity",
@@ -10,12 +16,16 @@ const MESSAGE_MAP: Record<string, string> = {
   "Medicine updated":                        "Medicine updated successfully",
   "Medicine deleted":                        "Medicine deleted successfully",
   "Stock adjusted":                          "Stock updated successfully",
+
+  // Auth
   "Invalid email or password":               "Invalid email or password",
   "Email already in use":                    "This email is already registered",
   "No token provided":                       "Please log in to continue",
   "Invalid or expired token":                "Your session has expired, please log in again",
   "Access denied: insufficient permissions": "You don't have permission to do this",
   "Login successful":                        "Welcome back!",
+
+  // General
   "Validation failed":                       "Some fields are invalid, please check and try again",
   "Route not found":                         "Requested resource not found",
   "Too many requests":                       "Too many requests, please wait a moment and try again",
