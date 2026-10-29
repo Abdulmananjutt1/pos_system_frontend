@@ -10,8 +10,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePharmacyStore } from "@/store";
+import { usePermissions, PERMISSIONS } from "@/hooks/usePermissions";
 import { THEMES } from "@/lib/themes";
-import toast from "react-hot-toast";
 
 // ── Per-theme sidebar config (inline styles — no CSS variable dependency) ──
 const SIDEBAR_CONFIG: Record<string, {
@@ -39,19 +39,19 @@ const SIDEBAR_CONFIG: Record<string, {
 };
 
 const navItems = [
-  { label: "Dashboard",       href: "/",                icon: LayoutDashboard  },
-  { label: "Point of Sale",   href: "/sales",           icon: ShoppingCart     },
-  { label: "Inventory",       href: "/inventory",       icon: Package          },
-  { label: "Medicines",       href: "/medicines",       icon: Pill             },
-  { label: "Purchase Orders", href: "/purchase-orders", icon: ClipboardList    },
-  { label: "Customers",       href: "/customers",       icon: Users            },
-  { label: "Suppliers",       href: "/suppliers",       icon: Truck            },
-  { label: "Stock Count",     href: "/stock-count",     icon: ClipboardCheck   },
-  { label: "Transfers",       href: "/transfers",       icon: ArrowLeftRight   },
-  { label: "Returns",         href: "/returns",         icon: RotateCcw        },
-  { label: "Reports",         href: "/reports",         icon: BarChart2        },
-  { label: "Login History",   href: "/login-history",   icon: Clock            },
-  { label: "Settings",        href: "/settings",        icon: Settings         },
+  { label: "Dashboard",       href: "/",                icon: LayoutDashboard, permission: PERMISSIONS.DASHBOARD_VIEW        },
+  { label: "Point of Sale",   href: "/sales",           icon: ShoppingCart,    permission: PERMISSIONS.SALES_CREATE          },
+  { label: "Inventory",       href: "/inventory",       icon: Package,         permission: PERMISSIONS.INVENTORY_VIEW        },
+  { label: "Medicines",       href: "/medicines",       icon: Pill,            permission: PERMISSIONS.MEDICINES_READ        },
+  { label: "Purchase Orders", href: "/purchase-orders", icon: ClipboardList,   permission: PERMISSIONS.PURCHASE_ORDERS_READ  },
+  { label: "Customers",       href: "/customers",       icon: Users,           permission: PERMISSIONS.CUSTOMERS_READ        },
+  { label: "Suppliers",       href: "/suppliers",       icon: Truck,           permission: PERMISSIONS.SUPPLIERS_READ        },
+  { label: "Stock Count",     href: "/stock-count",     icon: ClipboardCheck,  permission: PERMISSIONS.STOCK_COUNT_VIEW      },
+  { label: "Transfers",       href: "/transfers",       icon: ArrowLeftRight,  permission: PERMISSIONS.TRANSFERS_READ        },
+  { label: "Returns",         href: "/returns",         icon: RotateCcw,       permission: PERMISSIONS.RETURNS_READ          },
+  { label: "Reports",         href: "/reports",         icon: BarChart2,       permission: PERMISSIONS.REPORTS_VIEW          },
+  { label: "Login History",   href: "/login-history",   icon: Clock,           permission: PERMISSIONS.LOGIN_HISTORY_VIEW    },
+  { label: "Settings",        href: "/settings",        icon: Settings,        permission: PERMISSIONS.SETTINGS_VIEW         },
 ];
 
 export default function Sidebar() {
@@ -59,6 +59,7 @@ export default function Sidebar() {
   const router      = useRouter();
   const { currentUser, logout, settings } = usePharmacyStore();
 
+  const { can, isAdmin } = usePermissions();
   const cfg = SIDEBAR_CONFIG[settings.themeColor] ?? SIDEBAR_CONFIG.indigo;
   const activeSwatch = THEMES.find(t => t.key === settings.themeColor)?.swatch ?? "#4f46e5";
 
@@ -67,6 +68,8 @@ export default function Sidebar() {
     logout();
     router.push("/login");
   };
+
+  const visibleNav = navItems.filter((item) => can(item.permission));
 
   return (
     <aside
@@ -102,7 +105,7 @@ export default function Sidebar() {
 
       {/* ── Navigation ── */}
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-        {navItems.map(({ label, href, icon: Icon }) => {
+        {visibleNav.map(({ label, href, icon: Icon }) => {
           const isActive = href === "/" ? pathname === "/" : pathname.startsWith(href);
 
           return (
@@ -152,11 +155,17 @@ export default function Sidebar() {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold truncate" style={{ color: cfg.logoText }}>
-              {currentUser?.name ?? "Admin"}
+              {currentUser?.name ?? (isAdmin ? "Admin" : "Cashier")}
             </p>
-            <p className="text-xs truncate" style={{ color: cfg.muted }}>
-              {currentUser?.role ?? "Admin"}
-            </p>
+            <span
+              className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide mt-0.5"
+              style={{
+                backgroundColor: isAdmin ? "rgba(239,68,68,0.15)" : "rgba(34,197,94,0.15)",
+                color: isAdmin ? "#ef4444" : "#22c55e",
+              }}
+            >
+              {isAdmin ? "Admin" : "Cashier"}
+            </span>
           </div>
           <button
             onClick={handleLogout}

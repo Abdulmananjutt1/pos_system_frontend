@@ -1,6 +1,11 @@
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:5000/api";
 
 export interface AuthUser {
+  id:          string;
+  name:        string;
+  email:       string;
+  role:        "admin" | "cashier";
+  permissions: string[];
   id: string;
   name: string;
   email: string;
@@ -19,6 +24,11 @@ export const authService = {
     return json.data as { token: string; user: AuthUser };
   },
 
+  saveToken(token: string, role?: string, permissions?: string[]) {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("token", token);
+      if (role)        localStorage.setItem("userRole", role);
+      if (permissions) localStorage.setItem("userPermissions", JSON.stringify(permissions));
   saveToken(token: string, role?: string) {
     if (typeof window !== "undefined") {
       localStorage.setItem("token", token);
@@ -39,10 +49,18 @@ export const authService = {
     return localStorage.getItem("userRole");
   },
 
+  getPermissions(): string[] {
+    if (typeof window === "undefined") return [];
+    try {
+      return JSON.parse(localStorage.getItem("userPermissions") ?? "[]");
+    } catch { return []; }
+  },
+
   removeToken() {
     if (typeof window !== "undefined") {
       localStorage.removeItem("token");
       localStorage.removeItem("userRole");
+      localStorage.removeItem("userPermissions");
       // Cookie bhi clear karo
       document.cookie = "token=; path=/; max-age=0";
       document.cookie = "userRole=; path=/; max-age=0";

@@ -10,6 +10,11 @@ import Link from "next/link";
 export default function CashierLoginPage() {
   const router = useRouter();
 
+  const [email, setEmail]       = useState("");
+  const [password, setPassword] = useState("");
+  const [showPw, setShowPw]     = useState(false);
+  const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState("");
   const [email, setEmail]     = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw]   = useState(false);
@@ -31,6 +36,9 @@ export default function CashierLoginPage() {
         return;
       }
 
+      authService.saveToken(token, user.role, user.permissions);
+      toastSuccess(`Welcome, ${user.name}!`);
+      router.push("/sales");
       authService.saveToken(token, user.role);
       toastSuccess(`Welcome, ${user.name}!`);
       router.push("/sales"); // Cashier goes directly to POS
