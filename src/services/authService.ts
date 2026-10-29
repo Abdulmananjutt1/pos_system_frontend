@@ -19,11 +19,13 @@ export const authService = {
     return json.data as { token: string; user: AuthUser };
   },
 
-  saveToken(token: string) {
+  saveToken(token: string, role?: string) {
     if (typeof window !== "undefined") {
       localStorage.setItem("token", token);
+      if (role) localStorage.setItem("userRole", role);
       // Cookie bhi set karo — middleware isko read karta hai
       document.cookie = `token=${token}; path=/; max-age=${7 * 24 * 60 * 60}; SameSite=Lax`;
+      document.cookie = `userRole=${role ?? "cashier"}; path=/; max-age=${7 * 24 * 60 * 60}; SameSite=Lax`;
     }
   },
 
@@ -32,11 +34,18 @@ export const authService = {
     return localStorage.getItem("token");
   },
 
+  getRole(): string | null {
+    if (typeof window === "undefined") return null;
+    return localStorage.getItem("userRole");
+  },
+
   removeToken() {
     if (typeof window !== "undefined") {
       localStorage.removeItem("token");
+      localStorage.removeItem("userRole");
       // Cookie bhi clear karo
       document.cookie = "token=; path=/; max-age=0";
+      document.cookie = "userRole=; path=/; max-age=0";
     }
   },
 };

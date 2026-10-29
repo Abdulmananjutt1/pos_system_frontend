@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { authService } from "@/services/authService";
 import {
   LayoutDashboard, ShoppingCart, Package, Pill, Users, Truck,
   BarChart2, Settings, Cross, ClipboardList, ClipboardCheck,
@@ -55,14 +56,16 @@ const navItems = [
 
 export default function Sidebar() {
   const pathname    = usePathname();
+  const router      = useRouter();
   const { currentUser, logout, settings } = usePharmacyStore();
 
   const cfg = SIDEBAR_CONFIG[settings.themeColor] ?? SIDEBAR_CONFIG.indigo;
   const activeSwatch = THEMES.find(t => t.key === settings.themeColor)?.swatch ?? "#4f46e5";
 
   const handleLogout = () => {
+    authService.removeToken();
     logout();
-    toast.success("Logged out");
+    router.push("/login");
   };
 
   return (
