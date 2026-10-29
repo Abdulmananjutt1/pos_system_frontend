@@ -36,6 +36,10 @@ function mapMessage(raw: string): string {
   return MESSAGE_MAP[raw] ?? raw;
 }
 
+/**
+ * Show an error toast from a caught API error.
+ * Handles both Error instances and unknown throws.
+ */
 export function toastApiError(err: unknown): void {
   if (err instanceof Error) {
     toast.error(mapMessage(err.message));

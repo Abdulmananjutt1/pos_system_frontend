@@ -6,6 +6,10 @@ export interface AuthUser {
   email:       string;
   role:        "admin" | "cashier";
   permissions: string[];
+  id: string;
+  name: string;
+  email: string;
+  role: "admin" | "cashier";
 }
 
 export const authService = {
@@ -25,6 +29,11 @@ export const authService = {
       localStorage.setItem("token", token);
       if (role)        localStorage.setItem("userRole", role);
       if (permissions) localStorage.setItem("userPermissions", JSON.stringify(permissions));
+  saveToken(token: string, role?: string) {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("token", token);
+      if (role) localStorage.setItem("userRole", role);
+      // Cookie bhi set karo — middleware isko read karta hai
       document.cookie = `token=${token}; path=/; max-age=${7 * 24 * 60 * 60}; SameSite=Lax`;
       document.cookie = `userRole=${role ?? "cashier"}; path=/; max-age=${7 * 24 * 60 * 60}; SameSite=Lax`;
     }
@@ -52,6 +61,7 @@ export const authService = {
       localStorage.removeItem("token");
       localStorage.removeItem("userRole");
       localStorage.removeItem("userPermissions");
+      // Cookie bhi clear karo
       document.cookie = "token=; path=/; max-age=0";
       document.cookie = "userRole=; path=/; max-age=0";
     }

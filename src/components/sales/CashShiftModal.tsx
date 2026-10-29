@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
-import { Banknote, Clock, TrendingUp, CheckCircle } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { Banknote, Clock, CheckCircle, Loader2 } from "lucide-react";
 import Modal from "@/components/ui/Modal";
 import Button from "@/components/ui/Button";
-import { usePharmacyStore } from "@/store";
 import { formatCurrency } from "@/lib/utils";
+import { cashShiftService, CashShift } from "@/services/cashShiftService";
+import { toastApiError, toastSuccess } from "@/lib/toast";
+import { saleService } from "@/services/saleService";
 
 interface CashShiftModalProps {
   isOpen: boolean;
@@ -14,39 +16,99 @@ interface CashShiftModalProps {
 }
 
 export default function CashShiftModal({ isOpen, onClose, mode }: CashShiftModalProps) {
-  const { currentShift, openShift, closeShift, sales, addShiftEntry } = usePharmacyStore();
-  const [amount, setAmount] = useState("");
-  const [notes, setNotes] = useState("");
-  const [entryType, setEntryType] = useState<"in" | "out">("in");
-  const [entryDesc, setEntryDesc] = useState("");
-  const [entryAmount, setEntryAmount] = useState("");
-  const [tab, setTab] = useState<"summary" | "entries">("summary");
+  const [currentShift, setCurrentShift] = useState<CashShift | null>(null);
+  const [loading, setLoading]           = useState(false);
+  const [submitting, setSubmitting]     = useState(false);
+  const [amount, setAmount]             = useState("");
+  const [notes, setNotes]               = useState("");
+  const [cashSales, setCashSales]       = useState(0);
+  const [entryType, setEntryType]       = useState<"in" | "out">("in");
+  const [entryDesc, setEntryDesc]       = useState("");
+  const [entryAmount, setEntryAmount]   = useState("");
+  const [tab, setTab]                   = useState<"summary" | "entries">("summary");
 
-  const handleOpen = () => {
+  // Load current shift when modal opens
+  const loadShift = useCallback(async () => {
+    if (!isOpen) return;
+    setLoading(true);
+    try {
+      const shift = await cashShiftService.getCurrent();
+      setCurrentShift(shift);
+
+      // Load cash sales since shift opened
+      if (shift) {
+        const salesRes = await saleService.getAll({ limit: 500 });
+        const shiftCashSales = salesRes.sales
+          .filter((s) => s.paymentMethod === "Cash" && s.status === "Completed" &&
+            new Date(s.createdAt) >= new Date(shift.openTime))
+          .reduce((sum, s) => sum + s.total, 0);
+        setCashSales(shiftCashSales);
+      }
+    } catch (err) {
+      toastApiError(err);
+    } finally {
+      setLoading(false);
+    }
+  }, [isOpen]);
+
+  useEffect(() => { loadShift(); }, [loadShift]);
+
+  // ── Open shift ─────────────────────────────────────────────────────────────
+  const handleOpen = async () => {
     const bal = Number(amount);
     if (!amount || bal < 0) return;
-    openShift(bal);
-    setAmount("");
-    onClose();
+    setSubmitting(true);
+    try {
+      const shift = await cashShiftService.open(bal);
+      setCurrentShift(shift);
+      setAmount("");
+      toastSuccess("Shift opened");
+      onClose();
+    } catch (err) { toastApiError(err); }
+    finally { setSubmitting(false); }
   };
 
-  const handleClose = () => {
+  // ── Close shift ────────────────────────────────────────────────────────────
+  const handleClose = async () => {
+    if (!currentShift) return;
     const bal = Number(amount);
     if (!amount || bal < 0) return;
-    closeShift(bal, notes || undefined);
-    setAmount("");
-    setNotes("");
-    onClose();
+    setSubmitting(true);
+    try {
+      await cashShiftService.close(currentShift.id, bal, notes || undefined);
+      setCurrentShift(null);
+      setAmount(""); setNotes("");
+      toastSuccess("Shift closed");
+      onClose();
+    } catch (err) { toastApiError(err); }
+    finally { setSubmitting(false); }
   };
 
-  const handleAddEntry = () => {
-    if (!entryDesc || !entryAmount) return;
-    addShiftEntry({ description: entryDesc, amount: Number(entryAmount), type: entryType });
-    setEntryDesc("");
-    setEntryAmount("");
+  // ── Add cash entry ─────────────────────────────────────────────────────────
+  const handleAddEntry = async () => {
+    if (!currentShift || !entryDesc || !entryAmount) return;
+    setSubmitting(true);
+    try {
+      const entry = await cashShiftService.addEntry(currentShift.id, entryDesc, Number(entryAmount), entryType);
+      setCurrentShift((prev) => prev ? { ...prev, entries: [...prev.entries, entry] } : prev);
+      setEntryDesc(""); setEntryAmount("");
+      toastSuccess("Entry added");
+    } catch (err) { toastApiError(err); }
+    finally { setSubmitting(false); }
   };
 
-  if (mode === "open") {
+  if (loading) {
+    return (
+      <Modal isOpen={isOpen} onClose={onClose} title="Cash Shift" size="sm">
+        <div className="flex items-center justify-center py-10 text-gray-400">
+          <Loader2 size={24} className="animate-spin mr-2" />Loading…
+        </div>
+      </Modal>
+    );
+  }
+
+  // ── Open shift modal ───────────────────────────────────────────────────────
+  if (mode === "open" && !currentShift) {
     return (
       <Modal isOpen={isOpen} onClose={onClose} title="Open Cash Drawer" size="sm">
         <div className="space-y-5">
@@ -62,18 +124,32 @@ export default function CashShiftModal({ isOpen, onClose, mode }: CashShiftModal
           </div>
           <div className="flex gap-3">
             <Button variant="outline" className="flex-1" onClick={onClose}>Cancel</Button>
-            <Button className="flex-1" onClick={handleOpen}>Open Shift</Button>
+            <Button className="flex-1" onClick={handleOpen} disabled={submitting}>
+              {submitting ? <Loader2 size={13} className="animate-spin" /> : null}
+              Open Shift
+            </Button>
           </div>
         </div>
       </Modal>
     );
   }
 
+  if (mode === "open" && currentShift) {
+    return (
+      <Modal isOpen={isOpen} onClose={onClose} title="Shift Already Open" size="sm">
+        <div className="text-center py-4 space-y-3">
+          <p className="text-sm text-gray-600">A shift is already open since</p>
+          <p className="font-semibold text-gray-800">{new Date(currentShift.openTime).toLocaleString("en-PK")}</p>
+          <Button className="w-full" onClick={onClose}>OK</Button>
+        </div>
+      </Modal>
+    );
+  }
+
+  // ── Close shift modal ──────────────────────────────────────────────────────
   if (mode === "close" && currentShift) {
-    const shiftSales = sales.filter((s) => s.shiftId === currentShift.id && s.status === "Completed");
-    const cashSales = shiftSales.filter((s) => s.paymentMethod === "Cash").reduce((sum, s) => sum + s.total, 0);
-    const cashIns = currentShift.cashEntries.filter((e) => e.type === "in").reduce((s, e) => s + e.amount, 0);
-    const cashOuts = currentShift.cashEntries.filter((e) => e.type === "out").reduce((s, e) => s + e.amount, 0);
+    const cashIns  = currentShift.entries.filter((e) => e.type === "in").reduce((s, e)  => s + e.amount, 0);
+    const cashOuts = currentShift.entries.filter((e) => e.type === "out").reduce((s, e) => s + e.amount, 0);
     const expectedCash = currentShift.openingBalance + cashSales + cashIns - cashOuts;
 
     return (
@@ -82,9 +158,9 @@ export default function CashShiftModal({ isOpen, onClose, mode }: CashShiftModal
           <div className="space-y-2 text-sm">
             {[
               { label: "Opening Balance", value: formatCurrency(currentShift.openingBalance) },
-              { label: `Cash Sales (${shiftSales.filter(s=>s.paymentMethod==="Cash").length})`, value: formatCurrency(cashSales) },
-              { label: "Cash In", value: formatCurrency(cashIns), color: "text-green-600" },
-              { label: "Cash Out", value: formatCurrency(cashOuts), color: "text-red-600" },
+              { label: "Cash Sales",      value: formatCurrency(cashSales),      color: "text-blue-600" },
+              { label: "Cash In",         value: formatCurrency(cashIns),        color: "text-green-600" },
+              { label: "Cash Out",        value: formatCurrency(cashOuts),       color: "text-red-600" },
             ].map(({ label, value, color }) => (
               <div key={label} className="flex justify-between">
                 <span className="text-gray-500">{label}</span>
@@ -115,17 +191,20 @@ export default function CashShiftModal({ isOpen, onClose, mode }: CashShiftModal
           </div>
           <div className="flex gap-3">
             <Button variant="outline" className="flex-1" onClick={onClose}>Cancel</Button>
-            <Button variant="danger" className="flex-1" onClick={handleClose}>Close Shift</Button>
+            <Button variant="danger" className="flex-1" onClick={handleClose} disabled={submitting || !amount}>
+              {submitting ? <Loader2 size={13} className="animate-spin" /> : null}
+              Close Shift
+            </Button>
           </div>
         </div>
       </Modal>
     );
   }
 
+  // ── Summary modal ──────────────────────────────────────────────────────────
   if (mode === "summary" && currentShift) {
-    const shiftSales = sales.filter((s) => s.shiftId === currentShift.id && s.status === "Completed");
-    const totalRevenue = shiftSales.reduce((sum, s) => sum + s.total, 0);
-    const cashSales = shiftSales.filter((s) => s.paymentMethod === "Cash").reduce((sum, s) => sum + s.total, 0);
+    const cashIns  = currentShift.entries.filter((e) => e.type === "in").reduce((s, e)  => s + e.amount, 0);
+    const cashOuts = currentShift.entries.filter((e) => e.type === "out").reduce((s, e) => s + e.amount, 0);
     const openTime = new Date(currentShift.openTime);
 
     return (
@@ -134,14 +213,15 @@ export default function CashShiftModal({ isOpen, onClose, mode }: CashShiftModal
           <div className="flex items-center gap-2 text-sm text-gray-500">
             <Clock size={14} />
             <span>Opened: {openTime.toLocaleDateString("en-PK", { day: "numeric", month: "short" })} {openTime.toLocaleTimeString("en-PK", { hour: "2-digit", minute: "2-digit" })}</span>
+            <span className="text-xs text-gray-400">by {currentShift.openedBy}</span>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             {[
-              { label: "Total Sales", value: shiftSales.length, sub: "transactions" },
-              { label: "Revenue", value: formatCurrency(totalRevenue), sub: "all methods" },
-              { label: "Cash Sales", value: formatCurrency(cashSales), sub: "cash only" },
-              { label: "Opening Balance", value: formatCurrency(currentShift.openingBalance), sub: "opening" },
+              { label: "Cash Sales",      value: formatCurrency(cashSales),                     sub: "cash only" },
+              { label: "Opening Balance", value: formatCurrency(currentShift.openingBalance),   sub: "opening" },
+              { label: "Cash In",         value: formatCurrency(cashIns),                       sub: "entries" },
+              { label: "Cash Out",        value: formatCurrency(cashOuts),                      sub: "entries" },
             ].map(({ label, value, sub }) => (
               <div key={label} className="bg-gray-50 rounded-xl p-3">
                 <p className="text-xs text-gray-400">{label}</p>
@@ -151,7 +231,6 @@ export default function CashShiftModal({ isOpen, onClose, mode }: CashShiftModal
             ))}
           </div>
 
-          {/* Tab: summary / cash entries */}
           <div className="flex gap-1">
             {(["summary", "entries"] as const).map((t) => (
               <button key={t} onClick={() => setTab(t)}
@@ -163,28 +242,37 @@ export default function CashShiftModal({ isOpen, onClose, mode }: CashShiftModal
 
           {tab === "summary" && (
             <div className="space-y-1.5">
-              {["Cash", "Card", "UBL", "JazzCash", "EasyPaisa", "Credit"].map((method) => {
-                const count = shiftSales.filter((s) => s.paymentMethod === method).length;
-                const amount = shiftSales.filter((s) => s.paymentMethod === method).reduce((s, sale) => s + sale.total, 0);
-                if (count === 0) return null;
-                return (
-                  <div key={method} className="flex justify-between text-sm">
-                    <span className="text-gray-500">{method}</span>
-                    <span className="font-medium text-gray-800">{formatCurrency(amount)} <span className="text-gray-400">({count})</span></span>
-                  </div>
-                );
-              })}
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">Cash</span>
+                <span className="font-medium text-gray-800">{formatCurrency(cashSales)}</span>
+              </div>
+              {cashIns > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Cash In (entries)</span>
+                  <span className="font-medium text-green-600">{formatCurrency(cashIns)}</span>
+                </div>
+              )}
+              {cashOuts > 0 && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Cash Out (entries)</span>
+                  <span className="font-medium text-red-600">{formatCurrency(cashOuts)}</span>
+                </div>
+              )}
+              <div className="flex justify-between text-sm font-bold pt-1.5 border-t border-gray-100">
+                <span>Expected in Drawer</span>
+                <span>{formatCurrency(currentShift.openingBalance + cashSales + cashIns - cashOuts)}</span>
+              </div>
             </div>
           )}
 
           {tab === "entries" && (
             <div className="space-y-3">
-              {currentShift.cashEntries.length === 0 ? (
+              {currentShift.entries.length === 0 ? (
                 <p className="text-sm text-gray-400 text-center py-3">No cash entries yet</p>
               ) : (
-                <div className="space-y-1.5">
-                  {currentShift.cashEntries.map((e, i) => (
-                    <div key={i} className="flex justify-between text-sm">
+                <div className="space-y-1.5 max-h-32 overflow-y-auto">
+                  {currentShift.entries.map((e) => (
+                    <div key={e.id} className="flex justify-between text-sm">
                       <span className="text-gray-600">{e.description}</span>
                       <span className={e.type === "in" ? "text-green-600 font-medium" : "text-red-600 font-medium"}>
                         {e.type === "in" ? "+" : "-"}{formatCurrency(e.amount)}
@@ -209,7 +297,9 @@ export default function CashShiftModal({ isOpen, onClose, mode }: CashShiftModal
                 <div className="flex gap-2">
                   <input type="number" value={entryAmount} onChange={(e) => setEntryAmount(e.target.value)} placeholder="Amount"
                     className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500" />
-                  <Button size="sm" onClick={handleAddEntry}><CheckCircle size={13} />Add</Button>
+                  <Button size="sm" onClick={handleAddEntry} disabled={submitting}>
+                    <CheckCircle size={13} />Add
+                  </Button>
                 </div>
               </div>
             </div>

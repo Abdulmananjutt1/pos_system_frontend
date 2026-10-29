@@ -39,6 +39,7 @@ export default function AdminLoginPage() {
       }
 
       authService.saveToken(token, user.role, user.permissions);
+      authService.saveToken(token, user.role);
       toastSuccess(`Welcome, ${user.name}!`);
       router.push("/"); // Admin goes to dashboard
     } catch (err) {

@@ -26,6 +26,8 @@ const CASHIER_ALLOWED = [
 export function middleware(request: NextRequest) {
   const token    = request.cookies.get("token")?.value;
   const userRole = request.cookies.get("userRole")?.value;
+export function middleware(request: NextRequest) {
+  const token    = request.cookies.get("token")?.value;
   const { pathname } = request.nextUrl;
 
   const isCashierLogin = pathname === "/login";
@@ -57,6 +59,9 @@ export function middleware(request: NextRequest) {
     if (isAdminPage && !isCashierPage) {
       return NextResponse.redirect(new URL("/sales", request.url));
     }
+  // Already logged in → send to dashboard
+  if (isAuthPage && token) {
+    return NextResponse.redirect(new URL("/", request.url));
   }
 
   return NextResponse.next();

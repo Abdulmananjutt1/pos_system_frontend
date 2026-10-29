@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Plus, Search, Pencil, Trash2, PackagePlus, Pill, ArrowUpDown,
-  Upload, Barcode, TrendingDown, Download, RefreshCw,
+  Upload, Barcode, TrendingDown, Download, RefreshCw, Loader2,
 } from "lucide-react";
 import Header from "@/components/layout/Header";
 import Button from "@/components/ui/Button";
@@ -19,8 +19,10 @@ import { usePharmacyStore } from "@/store";
 import { formatCurrency } from "@/lib/utils";
 import { useInventoryAlerts } from "@/hooks/useInventoryAlerts";
 import { useReorderSuggestions } from "@/hooks/useReorderSuggestions";
-import { Medicine } from "@/types";
-import toast from "react-hot-toast";
+import { Medicine, Supplier } from "@/types";
+import { medicineService } from "@/services/medicineService";
+import { supplierService } from "@/services/supplierService";
+import { toastApiError, toastSuccess } from "@/lib/toast";
 import { MEDICINE_CATEGORIES } from "@/lib/constants";
 
 type CategoryFilter = Medicine["category"] | "All";
@@ -29,16 +31,15 @@ type SortDir = "asc" | "desc";
 type ActiveTab = "catalogue" | "reorder";
 
 export default function MedicinesPage() {
-  const {
-    medicines,
-    suppliers,
-    sales,
-    addMedicine,
-    updateMedicine,
-    deleteMedicine,
-    adjustStock,
-  } = usePharmacyStore();
+  const { sales } = usePharmacyStore();
 
+  // ── API State ─────────────────────────────────────────────────────────────
+  const [medicines, setMedicines] = useState<Medicine[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // ── UI State ──────────────────────────────────────────────────────────────
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("All");
   const [sortKey, setSortKey] = useState<SortKey>("name");
@@ -54,6 +55,28 @@ export default function MedicinesPage() {
 
   const [now, setNow] = useState<Date | null>(null);
   useEffect(() => { setNow(new Date()); }, []);
+
+  // ── Fetch medicines from API ───────────────────────────────────────────────
+  const fetchMedicines = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [medResult, supResult] = await Promise.all([
+        medicineService.getAll({ limit: 500 }),
+        supplierService.getAll(),
+      ]);
+      setMedicines(medResult.medicines);
+      setSuppliers(supResult);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to load data";
+      setError(msg);
+      toastApiError(err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchMedicines(); }, [fetchMedicines]);
 
   const alerts = useInventoryAlerts(medicines, now);
   const reorderSuggestions = useReorderSuggestions(medicines, sales, now);
@@ -91,38 +114,55 @@ export default function MedicinesPage() {
   const handleAdd = () => { setEditingMed(null); setFormOpen(true); };
   const handleEdit = (m: Medicine) => { setEditingMed(m); setFormOpen(true); };
 
-  const handleFormSubmit = (
+  const handleFormSubmit = async (
     data: Omit<Medicine, "id" | "createdAt" | "updatedAt">
   ) => {
-    if (editingMed) {
-      updateMedicine(editingMed.id, data);
-      toast.success(`${data.name} updated`);
-    } else {
-      addMedicine(data);
-      toast.success(`${data.name} added to catalogue`);
-    }
-    setFormOpen(false);
-  };
-
-  const handleDelete = (med: Medicine) => {
-    deleteMedicine(med.id);
-    toast.success(`${med.name} deleted`);
-    setDeleteConfirm(null);
-  };
-
-  const handleAdjust = (medicineId: string, adjustment: number) => {
-    adjustStock(medicineId, adjustment);
-    const med = medicines.find((m) => m.id === medicineId);
-    if (med) {
-      toast.success(
-        `Stock updated: ${med.name} → ${Math.max(0, med.stock + adjustment)} ${med.unit}s`
-      );
+    try {
+      if (editingMed) {
+        const updated = await medicineService.update(editingMed.id, data);
+        setMedicines((prev) => prev.map((m) => m.id === editingMed.id ? updated : m));
+        toastSuccess("Medicine updated");
+      } else {
+        const created = await medicineService.create(data);
+        setMedicines((prev) => [created, ...prev]);
+        toastSuccess("Medicine created");
+      }
+      setFormOpen(false);
+    } catch (err) {
+      toastApiError(err);
     }
   };
 
-  const handleBulkImport = (imported: Omit<Medicine, "id" | "createdAt" | "updatedAt">[]) => {
-    imported.forEach((m) => addMedicine(m));
-    toast.success(`${imported.length} medicines imported`);
+  const handleDelete = async (med: Medicine) => {
+    try {
+      await medicineService.delete(med.id);
+      setMedicines((prev) => prev.filter((m) => m.id !== med.id));
+      toastSuccess("Medicine deleted");
+      setDeleteConfirm(null);
+    } catch (err) {
+      toastApiError(err);
+    }
+  };
+
+  const handleAdjust = async (medicineId: string, adjustment: number) => {
+    try {
+      const updated = await medicineService.adjustStock(medicineId, adjustment);
+      setMedicines((prev) => prev.map((m) => m.id === medicineId ? updated : m));
+      toastSuccess("Stock adjusted");
+      setAdjustingMed(null);
+    } catch (err) {
+      toastApiError(err);
+    }
+  };
+
+  const handleBulkImport = async (imported: Omit<Medicine, "id" | "createdAt" | "updatedAt">[]) => {
+    try {
+      const results = await Promise.all(imported.map((m) => medicineService.create(m)));
+      setMedicines((prev) => [...results, ...prev]);
+      toastSuccess(`${imported.length} medicines imported`);
+    } catch (err) {
+      toastApiError(err);
+    }
   };
 
   const handleExportCSV = () => {
@@ -138,8 +178,40 @@ export default function MedicinesPage() {
     a.href = url;
     a.download = `medicines_${new Date().toISOString().split("T")[0]}.csv`;
     a.click();
-    toast.success(`Exported ${medicines.length} medicines`);
+    toastSuccess(`${medicines.length} medicines exported`);
   };
+
+  // ── Loading skeleton ──────────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div>
+        <Header title="Medicines" />
+        <div className="p-6">
+          <div className="flex items-center justify-center h-64 text-gray-400">
+            <Loader2 size={32} className="animate-spin mr-3" />
+            <span className="text-lg">Loading medicines…</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Error state ───────────────────────────────────────────────────────────
+  if (error) {
+    return (
+      <div>
+        <Header title="Medicines" />
+        <div className="p-6">
+          <div className="flex flex-col items-center justify-center h-64 text-gray-500 gap-4">
+            <p className="text-red-500 font-medium">Error: {error}</p>
+            <Button onClick={fetchMedicines} variant="outline">
+              <RefreshCw size={14} /> Retry
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -241,6 +313,9 @@ export default function MedicinesPage() {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            <Button size="sm" variant="outline" onClick={fetchMedicines} title="Refresh">
+              <RefreshCw size={14} />
+            </Button>
             <Button size="sm" variant="outline" onClick={() => setShowBarcodeModal(true)}>
               <Barcode size={14} />Labels
             </Button>
@@ -303,50 +378,51 @@ export default function MedicinesPage() {
           </div>
         )}
 
-
         {/* ── Table ─────────────────────────────────────────────────────── */}
-        {activeTab === "catalogue" && <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto shadow-sm">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-gray-50 border-b border-gray-200">
-                <SortTh label="Medicine" sortKey="name" current={sortKey} dir={sortDir} onClick={toggleSort} />
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Category</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Batch / Expiry</th>
-                <SortTh label="Stock" sortKey="stock" current={sortKey} dir={sortDir} onClick={toggleSort} />
-                <SortTh label="Price" sortKey="price" current={sortKey} dir={sortDir} onClick={toggleSort} />
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {sorted.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="px-4 py-14 text-center text-gray-400">
-                    <Pill size={32} className="mx-auto mb-2 text-gray-300" strokeWidth={1.5} />
-                    No medicines found
-                  </td>
+        {activeTab === "catalogue" && (
+          <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto shadow-sm">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-200">
+                  <SortTh label="Medicine" sortKey="name" current={sortKey} dir={sortDir} onClick={toggleSort} />
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Category</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Batch / Expiry</th>
+                  <SortTh label="Stock" sortKey="stock" current={sortKey} dir={sortDir} onClick={toggleSort} />
+                  <SortTh label="Price" sortKey="price" current={sortKey} dir={sortDir} onClick={toggleSort} />
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">Actions</th>
                 </tr>
-              ) : (
-                sorted.map((med) => (
-                  <MedicineRow
-                    key={med.id}
-                    medicine={med}
-                    now={now}
-                    onEdit={handleEdit}
-                    onDelete={setDeleteConfirm}
-                    onAdjust={setAdjustingMed}
-                  />
-                ))
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {sorted.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-14 text-center text-gray-400">
+                      <Pill size={32} className="mx-auto mb-2 text-gray-300" strokeWidth={1.5} />
+                      No medicines found
+                    </td>
+                  </tr>
+                ) : (
+                  sorted.map((med) => (
+                    <MedicineRow
+                      key={med.id}
+                      medicine={med}
+                      now={now}
+                      onEdit={handleEdit}
+                      onDelete={setDeleteConfirm}
+                      onAdjust={setAdjustingMed}
+                    />
+                  ))
+                )}
+              </tbody>
+            </table>
 
-          {sorted.length > 0 && (
-            <div className="px-4 py-3 border-t border-gray-100 text-xs text-gray-400">
-              {sorted.length} of {medicines.length} medicines
-            </div>
-          )}
-        </div>}
+            {sorted.length > 0 && (
+              <div className="px-4 py-3 border-t border-gray-100 text-xs text-gray-400">
+                {sorted.length} of {medicines.length} medicines
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ── Modals ──────────────────────────────────────────────────────────── */}
@@ -418,13 +494,7 @@ interface MedicineRowProps {
   onAdjust: (m: Medicine) => void;
 }
 
-function MedicineRow({
-  medicine: med,
-  now,
-  onEdit,
-  onDelete,
-  onAdjust,
-}: MedicineRowProps) {
+function MedicineRow({ medicine: med, now, onEdit, onDelete, onAdjust }: MedicineRowProps) {
   const isOut = med.stock === 0;
   const isLow = !isOut && med.stock <= med.minStock;
 
@@ -454,9 +524,7 @@ function MedicineRow({
 
       {/* Batch / Expiry */}
       <td className="px-4 py-3">
-        <p className="font-mono text-xs text-gray-700 font-medium">
-          {med.batchNumber}
-        </p>
+        <p className="font-mono text-xs text-gray-700 font-medium">{med.batchNumber}</p>
         {now ? (
           <div className="mt-1">
             <ExpiryBadge expiryDate={med.expiryDate} now={now} />
@@ -470,35 +538,19 @@ function MedicineRow({
       {/* Stock */}
       <td className="px-4 py-3">
         <div className="min-w-[90px]">
-          <span
-            className={`font-bold text-sm ${
-              isOut ? "text-red-600" : isLow ? "text-yellow-600" : "text-gray-900"
-            }`}
-          >
+          <span className={`font-bold text-sm ${isOut ? "text-red-600" : isLow ? "text-yellow-600" : "text-gray-900"}`}>
             {med.stock}
-            <span className="text-xs font-normal text-gray-400 ml-1">
-              {med.unit}s
-            </span>
+            <span className="text-xs font-normal text-gray-400 ml-1">{med.unit}s</span>
           </span>
-          <StockBar
-            stock={med.stock}
-            minStock={med.minStock}
-            className="mt-1.5 w-16"
-          />
-          <p className="text-[10px] text-gray-400 mt-0.5">
-            min {med.minStock}
-          </p>
+          <StockBar stock={med.stock} minStock={med.minStock} className="mt-1.5 w-16" />
+          <p className="text-[10px] text-gray-400 mt-0.5">min {med.minStock}</p>
         </div>
       </td>
 
       {/* Price */}
       <td className="px-4 py-3 whitespace-nowrap">
-        <p className="font-semibold text-gray-900">
-          {formatCurrency(med.sellingPrice)}
-        </p>
-        <p className="text-xs text-gray-400">
-          Cost: {formatCurrency(med.purchasePrice)}
-        </p>
+        <p className="font-semibold text-gray-900">{formatCurrency(med.sellingPrice)}</p>
+        <p className="text-xs text-gray-400">Cost: {formatCurrency(med.purchasePrice)}</p>
       </td>
 
       {/* Status */}
@@ -562,9 +614,7 @@ function SortTh({ label, sortKey, current, dir, onClick }: SortThProps) {
         {label}
         <ArrowUpDown size={12} className={active ? "text-blue-500" : "text-gray-300"} />
         {active && (
-          <span className="text-[10px] text-blue-500">
-            {dir === "asc" ? "↑" : "↓"}
-          </span>
+          <span className="text-[10px] text-blue-500">{dir === "asc" ? "↑" : "↓"}</span>
         )}
       </span>
     </th>

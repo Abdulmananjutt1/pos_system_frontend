@@ -15,6 +15,11 @@ export default function CashierLoginPage() {
   const [showPw, setShowPw]     = useState(false);
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState("");
+  const [email, setEmail]     = useState("");
+  const [password, setPassword] = useState("");
+  const [showPw, setShowPw]   = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError]     = useState("");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,6 +30,7 @@ export default function CashierLoginPage() {
       const emailVal = email.includes("@") ? email : `${email}@pharmapos.com`;
       const { token, user } = await authService.login(emailVal, password);
 
+      // Admin should use admin login page
       if (user.role === "admin") {
         setError("Please use the Admin login portal.");
         return;
@@ -33,6 +39,9 @@ export default function CashierLoginPage() {
       authService.saveToken(token, user.role, user.permissions);
       toastSuccess(`Welcome, ${user.name}!`);
       router.push("/sales");
+      authService.saveToken(token, user.role);
+      toastSuccess(`Welcome, ${user.name}!`);
+      router.push("/sales"); // Cashier goes directly to POS
     } catch (err) {
       toastApiError(err);
       setError(err instanceof Error ? err.message : "Invalid credentials.");
