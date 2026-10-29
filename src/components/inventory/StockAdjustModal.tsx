@@ -56,7 +56,6 @@ export default function StockAdjustModal({
     onAdjust(medicine.id, adjustment);
     setQty("");
     setError("");
-    onClose();
   };
 
   const handleClose = () => {

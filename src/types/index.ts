@@ -196,6 +196,7 @@ export interface PurchaseOrder {
 
 // ─── Stock Transfer ───────────────────────────────────────────────────────────
 export type TransferStatus = "Pending" | "InTransit" | "Received" | "Rejected";
+export type TransferType   = "Internal" | "ExternalOut" | "ExternalIn";
 
 export interface StockTransferItem {
   medicineId: string;
@@ -208,8 +209,11 @@ export interface StockTransferItem {
 export interface StockTransfer {
   id: string;
   transferNumber: string;
+  transferType: TransferType;
   fromBranch: string;
   toBranch: string;
+  externalPharmacy?: string;
+  externalPhone?: string;
   items: StockTransferItem[];
   transferDate: string;
   receiveDate?: string;
